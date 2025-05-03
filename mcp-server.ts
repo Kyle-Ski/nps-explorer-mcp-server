@@ -7,6 +7,7 @@ import { RecGovService } from "./services/recGovService";
 import { WeatherApiService, type ForecastDay } from "./services/weatherService";
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { GitHubHandler } from "./githubHandler";
+import { NominatimGeocodingService } from "./services/geocodingService";
 
 export interface Env {
     NpsMcpAgent: DurableObjectNamespace;
@@ -34,6 +35,7 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
 
     async init() {
         const http = new HttpClient();
+        const geocodingService = new NominatimGeocodingService(http);
         const npsService = new NpsApiService(http, this.env.NPS_API_KEY);
         const recGovService = new RecGovService(http, this.env.RECGOV_API_KEY);
         const weatherService = new WeatherApiService(http, this.env.WEATHER_API_KEY);
@@ -904,85 +906,194 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
             {
                 location: z.string().describe("Location name or coordinates"),
                 distance: z.number().optional().default(50).describe("Search radius in miles"),
-                activityType: z.string().optional().describe("Type of activity (e.g., 'camping', 'hiking')")
+                activityType: z.string().optional().describe("Type of activity (e.g., 'camping', 'hiking', 'biking', 'fishing')"),
+                includeTrails: z.boolean().optional().default(true).describe("Include trails in the results")
             },
-            async ({ location, distance, activityType }) => {
+            async ({ location, distance, activityType, includeTrails }) => {
                 try {
-                    // First get weather forecast to extract coordinates
-                    const forecast = await weatherService.get7DayForecastByLocation(location);
-                    if (!forecast || forecast.length === 0) {
+                    // First get coordinates from weather service
+                    const coordinates = await geocodingService.getCoordinates(location);
+
+                    if (!coordinates) {
                         return {
-                            content: [{ type: "text", text: `Could not find location: ${location}` }]
+                            content: [{ type: "text", text: `Could not identify the location: ${location}. Please try a more specific location name or provide coordinates.` }]
                         };
                     }
 
-                    // Get detailed weather to extract coordinates
-                    const detailedForecast = await weatherService.getDetailedForecast(location, 1);
+                    const { latitude, longitude } = coordinates;
 
-                    // TODO: Mock for this example - in real implementation we'd need to extract coords
-                    const latitude = 37.7749;
-                    const longitude = -122.4194;
+                    // Ensure minimum search radius for small towns
+                    const adjustedDistance = distance < 25 ? 25 : distance;
 
-                    // Get nearby facilities
+                    // Get facilities from Recreation.gov API
                     const facilities = await recGovService.getFacilitiesByLocation(
                         latitude,
                         longitude,
-                        distance
+                        adjustedDistance
                     );
 
-                    if (!facilities || facilities.length === 0) {
-                        return {
-                            content: [{
-                                type: "text",
-                                text: `No recreation facilities found within ${distance} miles of ${location}`
-                            }]
-                        };
+                    // Find national parks in the area
+                    const nearbyParks = await npsService.searchParksByLocation(
+                        latitude,
+                        longitude,
+                        5
+                    );
+
+                    // Get trail data if requested
+                    let trails: any[] = [];
+                    if (includeTrails) {
+                        // For each nearby park, get its trails
+                        for (const park of nearbyParks) {
+                            if (park.parkCode) {
+                                const parkTrails = await recGovService.getTrailsByPark(park.parkCode);
+                                trails = trails.concat(parkTrails);
+                            }
+                        }
                     }
 
                     // Filter by activity type if provided
                     let filteredFacilities = facilities;
                     if (activityType) {
-                        // This is a mock filter - in reality you'd need to check activities for each facility
-                        filteredFacilities = facilities.filter(f =>
-                            f.facilityName.toLowerCase().includes(activityType.toLowerCase())
-                        );
+                        filteredFacilities = facilities.filter(f => {
+                            const nameLower = f.facilityName.toLowerCase();
+                            const descLower = f.facilityDescription ? f.facilityDescription.toLowerCase() : '';
+                            return nameLower.includes(activityType.toLowerCase()) ||
+                                descLower.includes(activityType.toLowerCase());
+                        });
                     }
+
+                    // Filter trails by activity if provided
+                    let filteredTrails = trails;
+                    if (activityType && trails.length > 0) {
+                        filteredTrails = trails.filter(trail => {
+                            if (trail.trailUse && Array.isArray(trail.trailUse)) {
+                                return trail.trailUse.some((use: any) =>
+                                    use.toLowerCase().includes(activityType.toLowerCase())
+                                );
+                            }
+
+                            const nameLower = trail.name.toLowerCase();
+                            const descLower = trail.description ? trail.description.toLowerCase() : '';
+                            return nameLower.includes(activityType.toLowerCase()) ||
+                                descLower.includes(activityType.toLowerCase());
+                        });
+                    }
+
+                    // Get weather forecast for context
+                    const forecast = await weatherService.get7DayForecastByLocation(location);
 
                     // Format response
                     let response = `# Recreation Near ${location}\n\n`;
 
                     // Weather summary
                     response += `## Current Weather\n`;
-                    response += `The current forecast shows ${detailedForecast[0].condition} with temperatures `;
-                    response += `from ${detailedForecast[0].minTempF}°F to ${detailedForecast[0].maxTempF}°F.\n\n`;
-
-                    // Facilities
-                    response += `## Available Facilities (${filteredFacilities.length})\n`;
-                    if (filteredFacilities.length === 0) {
-                        response += `No ${activityType || "recreation"} facilities found within ${distance} miles.\n\n`;
+                    if (forecast && forecast.length > 0) {
+                        response += `The current forecast shows ${forecast[0].condition} with temperatures `;
+                        response += `from ${forecast[0].minTempF}°F to ${forecast[0].maxTempF}°F.\n\n`;
                     } else {
-                        filteredFacilities.slice(0, 8).forEach((facility, index) => {
-                            response += `### ${index + 1}. ${facility.facilityName}\n`;
-                            if (facility.facilityDescription) {
-                                response += `${facility.facilityDescription.substring(0, 150)}...\n\n`;
+                        response += `Weather information not available.\n\n`;
+                    }
+
+                    // Check what we found
+                    const foundSomething =
+                        filteredFacilities.length > 0 ||
+                        nearbyParks.length > 0 ||
+                        filteredTrails.length > 0;
+
+                    if (!foundSomething) {
+                        response += `## No Recreation Areas Found\n`;
+                        response += `We couldn't find any specific ${activityType || "recreation"} areas within ${adjustedDistance} miles of ${location}. `;
+                        response += `This may be due to limitations in our data sources. You might try:\n\n`;
+                        response += `1. Increasing your search radius\n`;
+                        response += `2. Searching for a nearby larger city\n`;
+                        response += `3. Checking local county and city park websites\n`;
+                        response += `4. Consulting regional hiking or recreation guides\n\n`;
+                    } else {
+                        // National Parks
+                        if (nearbyParks.length > 0) {
+                            response += `## Nearby National Parks (${nearbyParks.length})\n`;
+                            nearbyParks.forEach((park, index) => {
+                                response += `### ${index + 1}. ${park.name}\n`;
+                                if (park.description) {
+                                    response += `${park.description.substring(0, 150)}...\n\n`;
+                                }
+                                if (park.url) {
+                                    response += `[Visit Website](${park.url})\n\n`;
+                                }
+                            });
+                        }
+
+                        // Recreation Facilities
+                        if (filteredFacilities.length > 0) {
+                            response += `## Recreation Facilities (${filteredFacilities.length})\n`;
+                            filteredFacilities.slice(0, 8).forEach((facility, index) => {
+                                response += `### ${index + 1}. ${facility.facilityName}\n`;
+                                if (facility.facilityDescription) {
+                                    response += `${facility.facilityDescription.substring(0, 150)}...\n\n`;
+                                }
+                                response += `**Location**: ${facility.latitude}, ${facility.longitude}\n`;
+
+                                if (facility.facilityPhone) {
+                                    response += `**Phone**: ${facility.facilityPhone}\n`;
+                                }
+
+                                if (facility.facilityReservationUrl) {
+                                    response += `**Reservations**: ${facility.facilityReservationUrl}\n`;
+                                }
+
+                                response += `\n`;
+                            });
+
+                            if (filteredFacilities.length > 8) {
+                                response += `...and ${filteredFacilities.length - 8} more facilities\n\n`;
                             }
-                            response += `**Location**: ${facility.latitude}, ${facility.longitude}\n`;
+                        }
 
-                            if (facility.facilityPhone) {
-                                response += `**Phone**: ${facility.facilityPhone}\n`;
+                        // Trails
+                        if (filteredTrails.length > 0) {
+                            response += `## Hiking Trails (${filteredTrails.length})\n`;
+                            filteredTrails.slice(0, 8).forEach((trail, index) => {
+                                response += `### ${index + 1}. ${trail.name}\n`;
+
+                                if (trail.description) {
+                                    response += `${trail.description.substring(0, 150)}...\n\n`;
+                                }
+
+                                if (trail.length) {
+                                    response += `**Length**: ${trail.length} miles\n`;
+                                }
+
+                                if (trail.difficulty) {
+                                    response += `**Difficulty**: ${trail.difficulty}\n`;
+                                }
+
+                                if (trail.elevationGain) {
+                                    response += `**Elevation Gain**: ${trail.elevationGain} ft\n`;
+                                }
+
+                                if (trail.trailUse && trail.trailUse.length > 0) {
+                                    response += `**Activities**: ${trail.trailUse.join(", ")}\n`;
+                                }
+
+                                response += `\n`;
+                            });
+
+                            if (filteredTrails.length > 8) {
+                                response += `...and ${filteredTrails.length - 8} more trails\n\n`;
                             }
-
-                            if (facility.facilityReservationUrl) {
-                                response += `**Reservations**: ${facility.facilityReservationUrl}\n`;
-                            }
-
-                            response += `\n`;
-                        });
-
-                        if (filteredFacilities.length > 8) {
-                            response += `...and ${filteredFacilities.length - 8} more facilities\n\n`;
                         }
                     }
+
+                    // General recreation advice without location specificity
+                    response += `## Additional Resources\n`;
+                    response += `Here are some additional resources for finding recreation opportunities:\n\n`;
+                    response += `- **AllTrails**: Comprehensive trail guides and user reviews\n`;
+                    response += `- **Recreation.gov**: Official site for booking campsites and permits on federal lands\n`;
+                    response += `- **National Park Service**: Information about national parks, monuments, and historic sites\n`;
+                    response += `- **Local Visitor Centers**: Often have the most up-to-date information on trails and conditions\n`;
+                    response += `- **State Park Websites**: Offer information on state-managed recreation areas\n\n`;
+
+                    response += `For the most accurate information about trail conditions, always check recent reviews and visitor center updates before your trip.\n`;
 
                     return {
                         content: [{ type: "text", text: response }]

@@ -60,7 +60,6 @@ export interface IWeatherService {
     getCurrentWeatherByCoords(latitude: number, longitude: number): Promise<WeatherInfo>;
     get7DayForecastByCoords(latitude: number, longitude: number): Promise<ForecastDay[]>;
     get7DayForecastByLocation(location: string): Promise<ForecastDay[]>;
-    // New methods
     getHourlyForecast(location: string, days?: number): Promise<HourlyForecast[]>;
     getDetailedForecast(location: string, days?: number): Promise<DetailedForecastDay[]>;
     getWeatherAlerts(location: string): Promise<WeatherAlert[]>;

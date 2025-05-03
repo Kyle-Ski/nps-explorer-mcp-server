@@ -89,6 +89,7 @@ export interface INpsApiService {
     getVisitorCenters(parkCode: string): Promise<any[]>;
     getThingsToDo(parkCode: string): Promise<any[]>;
     getParks(limit?: number): Promise<Park[]>;
+    searchParksByLocation(latitude: number, longitude: number, maxResults?: number): Promise<Park[]>;
 }
 
 export class NpsApiService implements INpsApiService {
@@ -98,6 +99,38 @@ export class NpsApiService implements INpsApiService {
         private readonly http: HttpClient,
         private readonly apiKey: string
     ) { }
+
+    async searchParksByLocation(latitude: number, longitude: number, maxResults: number = 5): Promise<Park[]> {
+        console.log(`NPS SERVICE: searchParksByLocation(${latitude}, ${longitude}, ${maxResults})`);
+
+        // NPS API doesn't directly support lat/lon search, so we'll do a bounding box search
+        // This creates a roughly 50-mile radius search box around the coordinates
+        const miles = 50;
+        const lat_range = miles / 69.0; // Approx miles per degree of latitude
+        const lon_range = miles / (Math.cos(latitude * Math.PI / 180) * 69.0); // Adjust for longitude
+
+        const north = latitude + lat_range;
+        const south = latitude - lat_range;
+        const east = longitude + lon_range;
+        const west = longitude - lon_range;
+
+        const boundingBox = `${north},${west},${south},${east}`;
+
+        // The NPS API doesn't directly support bounding box, so we'll get all parks
+        // and filter them ourselves
+        const parks = await this.getParks(100);
+
+        return parks.filter(park => {
+            if (!park.latitude || !park.longitude) return false;
+
+            return (
+                park.latitude >= south &&
+                park.latitude <= north &&
+                park.longitude >= west &&
+                park.longitude <= east
+            );
+        }).slice(0, maxResults);
+    }
 
     async getParks(limit: number = 50, start: number = 0): Promise<Park[]> {
         console.log(`NPS SERVICE: getParks(limit: ${limit}, start: ${start}): Promise<Park[]>`);
