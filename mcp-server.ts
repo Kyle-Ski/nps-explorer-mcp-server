@@ -502,23 +502,18 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                 try {
                     let parks: Park[] = [];
 
-                    // Use appropriate search method based on provided parameters
-                    if (q) {
-                        parks = await npsService.searchParks(q, limit, start);
-                    } else if (stateCode) {
-                        parks = await npsService.getParksByState(stateCode);
-                        // Apply manual pagination if the API doesn't support it
-                        if (start > 0 || limit < parks.length) {
-                            parks = parks.slice(start, start + limit);
-                        }
-                    } else if (activity) {
+                    // Select the appropriate service method based on parameters provided
+                    if (q !== undefined || stateCode !== undefined) {
+                        parks = await npsService.searchParks(q, stateCode, limit, start);
+                    }
+                    else if (activity) {
+                        // For activity filtering, use the existing method
                         parks = await npsService.getParksByActivity(activity);
-                        // Apply manual pagination if the API doesn't support it
-                        if (start > 0 || limit < parks.length) {
-                            parks = parks.slice(start, start + limit);
-                        }
-                    } else {
-                        // If no specific criteria provided, get all parks with pagination
+                        // Apply manual pagination if needed
+                        parks = parks.slice(start, Math.min(parks.length, start + limit));
+                    }
+                    else {
+                        // If no specific criteria, get all parks with pagination
                         parks = await npsService.getParks(limit, start);
                     }
 
@@ -531,7 +526,7 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         };
                     }
 
-                    // Format the response with more comprehensive information
+                    // Format the response with comprehensive information
                     let response = `# National Parks Search Results\n\n`;
                     response += `Found ${parks.length} parks matching your criteria${start > 0 ? ` (starting at result ${start + 1})` : ''}:\n\n`;
 

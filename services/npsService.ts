@@ -80,7 +80,7 @@ export interface Activity {
 export interface INpsApiService {
     getParksByState(stateCode: string): Promise<Park[]>;
     getParkById(id: string): Promise<Park>;
-    searchParks(query: string, limit?: number): Promise<Park[]>;
+    searchParks(query?: string, stateCode?: string, limit?: number, start?: number): Promise<Park[]>;
     getActivities(): Promise<Activity[]>;
     getParksByActivity(activityId: string): Promise<Park[]>;
     getAlertsByPark(parkCode: string): Promise<Alert[]>;
@@ -122,9 +122,19 @@ export class NpsApiService implements INpsApiService {
     }
 
     // Search parks by keywords
-    async searchParks(query: string, limit: number = 10, start: number = 0): Promise<Park[]> {
-        console.log(`NPS SERVICE: searchParks(query: ${query}, limit: ${limit}, start: ${start}): Promise<Park[]>`);
-        const url = `${this.baseUrl}/parks?q=${encodeURIComponent(query)}&limit=${limit}&start=${start}&api_key=${this.apiKey}`;
+    async searchParks(query?: string, stateCode?: string, limit: number = 10, start: number = 0): Promise<Park[]> {
+        console.log(`NPS SERVICE: searchParks(query: ${query}, stateCode: ${stateCode}, limit: ${limit}, start: ${start})`);
+
+        let url = `${this.baseUrl}/parks?api_key=${this.apiKey}&limit=${limit}&start=${start}`;
+
+        if (query) {
+            url += `&q=${encodeURIComponent(query)}`;
+        }
+
+        if (stateCode) {
+            url += `&stateCode=${encodeURIComponent(stateCode)}`;
+        }
+
         const resp = await this.http.get<NpsApiResponse>(url);
         return resp.data.map((p) => this.mapParkResponse(p));
     }
