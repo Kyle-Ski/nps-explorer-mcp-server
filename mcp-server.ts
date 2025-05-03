@@ -7,6 +7,7 @@ import { RecGovService } from "./services/recGovService";
 import { WeatherApiService, type ForecastDay } from "./services/weatherService";
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { GitHubHandler } from "./githubHandler";
+import { NominatimGeocodingService } from "./services/geocodingService";
 
 export interface Env {
     NpsMcpAgent: DurableObjectNamespace;
@@ -34,6 +35,7 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
 
     async init() {
         const http = new HttpClient();
+        const geocodingService = new NominatimGeocodingService(http);
         const npsService = new NpsApiService(http, this.env.NPS_API_KEY);
         const recGovService = new RecGovService(http, this.env.RECGOV_API_KEY);
         const weatherService = new WeatherApiService(http, this.env.WEATHER_API_KEY);
@@ -196,12 +198,18 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
 
         // Tool for comprehensive park information
         this.server.tool(
-            "getParkOverview",
-            "Get comprehensive overview of a national park including alerts, events, and weather",
+            "getParkInfo",
+            "Get comprehensive information about a national park including both static details and current conditions",
             {
-                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)")
+                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)"),
+                includeBasics: z.boolean().optional().default(true).describe("Include basic park information"),
+                includeAlerts: z.boolean().optional().default(true).describe("Include current alerts"),
+                includeWeather: z.boolean().optional().default(true).describe("Include weather forecast"),
+                includeEvents: z.boolean().optional().default(true).describe("Include upcoming events"),
+                includeCamping: z.boolean().optional().default(true).describe("Include camping options"),
+                includeImages: z.boolean().optional().default(true).describe("Include park images")
             },
-            async ({ parkCode }) => {
+            async ({ parkCode, includeBasics, includeAlerts, includeWeather, includeEvents, includeCamping, includeImages }) => {
                 try {
                     // Get park info
                     const park = await npsService.getParkById(parkCode);
@@ -211,90 +219,175 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         };
                     }
 
-                    // Get alerts
-                    const alerts = await npsService.getAlertsByPark(parkCode);
+                    let response = `# ${park.name}\n\n`;
 
-                    // Get weather
-                    const forecast = await weatherService.get7DayForecastByLocation(park.name);
+                    // STATIC INFORMATION (from getParkDetails)
+                    if (includeBasics) {
+                        // Basic description
+                        if (park.description) {
+                            response += `## Overview\n${park.description}\n\n`;
+                        }
 
-                    // Get upcoming events
-                    const today = new Date();
-                    const endDate = new Date();
-                    endDate.setDate(today.getDate() + 14); // Next 2 weeks
+                        // Location information
+                        response += `## Location\n`;
+                        if (park.states) {
+                            response += `**States:** ${park.states}\n`;
+                        }
+                        if (park.latitude && park.longitude) {
+                            response += `**Coordinates:** ${park.latitude}, ${park.longitude}\n`;
+                        }
+                        response += `\n`;
 
-                    const events = await npsService.getEventsByPark(
-                        parkCode,
-                        today.toISOString().split('T')[0],
-                        endDate.toISOString().split('T')[0]
-                    );
+                        // Official website
+                        if (park.url) {
+                            response += `**Official Website:** ${park.url}\n\n`;
+                        }
 
-                    // Get campgrounds
-                    const campgrounds = await npsService.getCampgroundsByPark(parkCode);
+                        // Entrance fees
+                        if (park.entranceFees && park.entranceFees.length > 0) {
+                            response += `## Entrance Fees\n`;
+                            park.entranceFees.forEach(fee => {
+                                response += `### ${fee.title}\n`;
+                                response += `**Cost:** $${fee.cost}\n`;
+                                response += `${fee.description}\n\n`;
+                            });
+                        }
 
-                    // Format a comprehensive response
-                    let response = `# ${park.name} Overview\n\n`;
+                        // Operating hours
+                        if (park.operatingHours && park.operatingHours.length > 0) {
+                            response += `## Operating Hours\n`;
+                            park.operatingHours.forEach(hours => {
+                                response += `### ${hours.name}\n`;
+                                if (hours.description) {
+                                    response += `${hours.description}\n\n`;
+                                }
 
-                    // Basic info
-                    response += `## About\n${park.description || "No description available."}\n\n`;
+                                // Weekly schedule
+                                response += "**Weekly Schedule:**\n";
+                                if (hours.standardHours) {
+                                    response += `- Sunday: ${hours.standardHours.sunday}\n`;
+                                    response += `- Monday: ${hours.standardHours.monday}\n`;
+                                    response += `- Tuesday: ${hours.standardHours.tuesday}\n`;
+                                    response += `- Wednesday: ${hours.standardHours.wednesday}\n`;
+                                    response += `- Thursday: ${hours.standardHours.thursday}\n`;
+                                    response += `- Friday: ${hours.standardHours.friday}\n`;
+                                    response += `- Saturday: ${hours.standardHours.saturday}\n`;
+                                }
+                                response += `\n`;
+                            });
+                        }
 
-                    // Location
-                    if (park.latitude && park.longitude) {
-                        response += `**Location**: ${park.latitude}, ${park.longitude}\n\n`;
+                        // Activities
+                        if (park.activities && park.activities.length > 0) {
+                            response += `## Available Activities\n`;
+                            const activityGroups = [];
+                            for (let i = 0; i < park.activities.length; i += 5) {
+                                activityGroups.push(park.activities.slice(i, i + 5).map(a => a.name).join(", "));
+                            }
+                            activityGroups.forEach(group => {
+                                response += `${group}\n`;
+                            });
+                            response += `\n`;
+                        }
                     }
 
+                    // DYNAMIC/CURRENT INFORMATION (from getParkOverview)
+
                     // Alerts
-                    response += `## Current Alerts (${alerts.length})\n`;
-                    if (alerts.length === 0) {
-                        response += "No current alerts for this park.\n\n";
-                    } else {
-                        alerts.slice(0, 3).forEach(alert => {
-                            response += `- **${alert.title}** (${alert.category}): ${alert.description.substring(0, 100)}...\n`;
-                        });
-                        if (alerts.length > 3) {
-                            response += `- Plus ${alerts.length - 3} more alerts\n`;
+                    if (includeAlerts) {
+                        const alerts = await npsService.getAlertsByPark(parkCode);
+                        response += `## Current Alerts (${alerts.length})\n`;
+                        if (alerts.length === 0) {
+                            response += "No current alerts for this park.\n\n";
+                        } else {
+                            alerts.slice(0, 3).forEach(alert => {
+                                response += `- **${alert.title}** (${alert.category}): ${alert.description.substring(0, 100)}...\n`;
+                            });
+                            if (alerts.length > 3) {
+                                response += `- Plus ${alerts.length - 3} more alerts\n`;
+                            }
+                            response += "\n";
                         }
-                        response += "\n";
                     }
 
                     // Weather
-                    response += `## 7-Day Weather Forecast\n`;
-                    if (!forecast || forecast.length === 0) {
-                        response += "Weather forecast not available.\n\n";
-                    } else {
-                        forecast.forEach(day => {
-                            response += `- **${day.date}**: ${day.minTempF}°F to ${day.maxTempF}°F, ${day.condition}\n`;
-                        });
-                        response += "\n";
+                    if (includeWeather) {
+                        const forecast = await weatherService.get7DayForecastByLocation(park.name);
+                        response += `## 7-Day Weather Forecast\n`;
+                        if (!forecast || forecast.length === 0) {
+                            response += "Weather forecast not available.\n\n";
+                        } else {
+                            forecast.forEach(day => {
+                                response += `- **${day.date}**: ${day.minTempF}°F to ${day.maxTempF}°F, ${day.condition}\n`;
+                            });
+                            response += "\n";
+                        }
                     }
 
                     // Upcoming events
-                    response += `## Upcoming Events (${events.length})\n`;
-                    if (events.length === 0) {
-                        response += "No upcoming events in the next 14 days.\n\n";
-                    } else {
-                        events.slice(0, 5).forEach(event => {
-                            response += `- **${event.title}** (${event.dateStart}): ${event.location}\n`;
-                        });
-                        if (events.length > 5) {
-                            response += `- Plus ${events.length - 5} more events\n`;
+                    if (includeEvents) {
+                        // Get events for the next 14 days
+                        const today = new Date();
+                        const endDate = new Date();
+                        endDate.setDate(today.getDate() + 14);
+
+                        const startDateStr = today.toISOString().split('T')[0];
+                        const endDateStr = endDate.toISOString().split('T')[0];
+
+                        const events = await npsService.getEventsByPark(
+                            parkCode,
+                            startDateStr,
+                            endDateStr
+                        );
+
+                        response += `## Upcoming Events (${events.length})\n`;
+                        if (events.length === 0) {
+                            response += "No upcoming events in the next 14 days.\n\n";
+                        } else {
+                            events.slice(0, 5).forEach(event => {
+                                response += `- **${event.title}** (${event.dateStart}): ${event.location}\n`;
+                            });
+                            if (events.length > 5) {
+                                response += `- Plus ${events.length - 5} more events\n`;
+                            }
+                            response += "\n";
                         }
-                        response += "\n";
                     }
 
                     // Campgrounds
-                    response += `## Camping Options (${campgrounds.length})\n`;
-                    if (campgrounds.length === 0) {
-                        response += "No campgrounds available in this park.\n\n";
-                    } else {
-                        campgrounds.slice(0, 3).forEach(campground => {
-                            let siteInfo = "";
-                            if (campground.totalSites) {
-                                siteInfo = ` (${campground.totalSites} sites)`;
+                    if (includeCamping) {
+                        const campgrounds = await npsService.getCampgroundsByPark(parkCode);
+                        response += `## Camping Options (${campgrounds.length})\n`;
+                        if (campgrounds.length === 0) {
+                            response += "No campgrounds available in this park.\n\n";
+                        } else {
+                            campgrounds.slice(0, 3).forEach(campground => {
+                                let siteInfo = "";
+                                if (campground.totalSites) {
+                                    siteInfo = ` (${campground.totalSites} sites)`;
+                                }
+                                response += `- **${campground.name}**${siteInfo}\n`;
+                            });
+                            if (campgrounds.length > 3) {
+                                response += `- Plus ${campgrounds.length - 3} more campgrounds\n`;
                             }
-                            response += `- **${campground.name}**${siteInfo}\n`;
+                            response += "\n";
+                        }
+                    }
+
+                    // Images
+                    if (includeImages && park.images && park.images.length > 0) {
+                        response += `## Gallery\n`;
+                        park.images.slice(0, 3).forEach((image, index) => {
+                            response += `### Image ${index + 1}: ${image.title}\n`;
+                            response += `![${image.caption || image.title}](${image.url})\n\n`;
+                            if (image.caption) {
+                                response += `*${image.caption}*\n\n`;
+                            }
                         });
-                        if (campgrounds.length > 3) {
-                            response += `- Plus ${campgrounds.length - 3} more campgrounds\n`;
+
+                        if (park.images.length > 3) {
+                            response += `*Plus ${park.images.length - 3} more images available*\n\n`;
                         }
                     }
 
@@ -302,9 +395,9 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         content: [{ type: "text", text: response }]
                     };
                 } catch (error: any) {
-                    console.error("Error in getParkOverview:", error);
+                    console.error("Error in getParkInfo:", error);
                     return {
-                        content: [{ type: "text", text: `Error retrieving park overview: ${error.message}` }]
+                        content: [{ type: "text", text: `Error retrieving park information: ${error.message}` }]
                     };
                 }
             }
@@ -399,28 +492,31 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
         // Tool to find parks based on multiple criteria
         this.server.tool(
             "findParks",
-            "Find national parks based on criteria such as state, activities, or amenities",
+            "Find national parks based on criteria such as keyword search, state, activities, or amenities",
             {
+                q: z.string().optional().describe("Free text search query for park name or description"),
                 stateCode: z.string().optional().describe("Two-letter state code (e.g., CA, NY)"),
                 activity: z.string().optional().describe("Activity to filter parks by (e.g., hiking, camping)"),
-                q: z.string().optional().describe("Free text search query"),
-                limit: z.number().optional().default(10).describe("Maximum number of results to return")
+                limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+                start: z.number().optional().default(0).describe("Starting index for pagination")
             },
-            async ({ stateCode, activity, q, limit }) => {
+            async ({ q, stateCode, activity, limit, start }) => {
                 try {
                     let parks: Park[] = [];
 
-                    // Use existing service methods based on provided parameters
-                    if (stateCode) {
-                        parks = await npsService.getParksByState(stateCode);
-                    } else if (activity) {
+                    // Select the appropriate service method based on parameters provided
+                    if (q !== undefined || stateCode !== undefined) {
+                        parks = await npsService.searchParks(q, stateCode, limit, start);
+                    }
+                    else if (activity) {
+                        // For activity filtering, use the existing method
                         parks = await npsService.getParksByActivity(activity);
-                    } else if (q) {
-                        // Assuming you have or will implement a search method in NpsApiService
-                        parks = await npsService.searchParks(q);
-                    } else {
-                        // Get all parks with a reasonable limit if no criteria provided
-                        parks = await npsService.getParks(limit);
+                        // Apply manual pagination if needed
+                        parks = parks.slice(start, Math.min(parks.length, start + limit));
+                    }
+                    else {
+                        // If no specific criteria, get all parks with pagination
+                        parks = await npsService.getParks(limit, start);
                     }
 
                     if (!parks || parks.length === 0) {
@@ -432,30 +528,57 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         };
                     }
 
-                    // Apply limit
-                    parks = parks.slice(0, limit);
-
-                    // Format the response
-                    let response = `# National Parks Search Results\n\nFound ${parks.length} parks matching your criteria:\n\n`;
+                    // Format the response with comprehensive information
+                    let response = `# National Parks Search Results\n\n`;
+                    response += `Found ${parks.length} parks matching your criteria${start > 0 ? ` (starting at result ${start + 1})` : ''}:\n\n`;
 
                     parks.forEach((park, index) => {
                         response += `## ${index + 1}. ${park.name}\n`;
                         response += `**Park Code:** ${park.parkCode}\n`;
 
-                        if (park.description) {
-                            response += `**Description:** ${park.description.substring(0, 200)}${park.description.length > 200 ? '...' : ''}\n`;
-                        }
-
                         if (park.states) {
                             response += `**States:** ${park.states}\n`;
+                        }
+
+                        if (park.latitude && park.longitude) {
+                            response += `**Location:** ${park.latitude}, ${park.longitude}\n`;
+                        }
+
+                        if (park.description) {
+                            const shortDesc = park.description.length > 200
+                                ? park.description.substring(0, 200) + '...'
+                                : park.description;
+                            response += `**Description:** ${shortDesc}\n`;
+                        }
+
+                        // Include a few key activities if available
+                        if (park.activities && park.activities.length > 0) {
+                            const topActivities = park.activities.slice(0, 5).map(a => a.name).join(", ");
+                            response += `**Popular Activities:** ${topActivities}${park.activities.length > 5 ? ', and more' : ''}\n`;
+                        }
+
+                        if (park.entranceFees && park.entranceFees.length > 0) {
+                            const fee = park.entranceFees[0];
+                            response += `**Entrance Fee:** $${fee.cost} (${fee.title})\n`;
                         }
 
                         if (park.url) {
                             response += `**Website:** ${park.url}\n`;
                         }
 
-                        response += '\n';
+                        // Add a sample image if available
+                        if (park.images && park.images.length > 0) {
+                            response += `\n![${park.images[0].caption || park.name}](${park.images[0].url})\n`;
+                        }
+
+                        response += '\n---\n\n';
                     });
+
+                    // Add pagination information
+                    if (parks.length >= limit) {
+                        const nextStart = start + limit;
+                        response += `\n*To see more results, search with start=${nextStart}*\n`;
+                    }
 
                     return {
                         content: [{ type: "text", text: response }]
@@ -466,6 +589,135 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         content: [{
                             type: "text",
                             text: `Error finding parks: ${error.message}`
+                        }]
+                    };
+                }
+            }
+        );
+
+        // Tool for getting campground information for a park
+        this.server.tool(
+            "getCampgrounds",
+            "List campgrounds within a given national park with detailed information",
+            {
+                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)"),
+                limit: z.number().optional().default(10).describe("Maximum number of campgrounds to return"),
+                start: z.number().optional().default(0).describe("Starting index for pagination")
+            },
+            async ({ parkCode, limit, start }) => {
+                try {
+                    // Get park info for context
+                    const park = await npsService.getParkById(parkCode);
+                    if (!park) {
+                        return {
+                            content: [{ type: "text", text: `No park found with code: ${parkCode}` }]
+                        };
+                    }
+
+                    // Get all campgrounds for this park
+                    let campgrounds = await npsService.getCampgroundsByPark(parkCode);
+
+                    // Apply pagination manually if needed
+                    const totalCount = campgrounds.length;
+                    campgrounds = campgrounds.slice(start, start + limit);
+
+                    if (campgrounds.length === 0) {
+                        return {
+                            content: [{ type: "text", text: `No campgrounds found in ${park.name} (Park Code: ${parkCode}).` }]
+                        };
+                    }
+
+                    // Format a detailed response
+                    let response = `# Campgrounds in ${park.name}\n\n`;
+
+                    // Summary info
+                    response += `Found ${totalCount} campgrounds${totalCount > limit ? `, showing ${Math.min(limit, campgrounds.length)} (${start + 1}-${start + campgrounds.length})` : ''}.\n\n`;
+
+                    // Detailed campground information
+                    campgrounds.forEach((campground, index) => {
+                        response += `## ${index + 1 + start}. ${campground.name}\n\n`;
+
+                        if (campground.description) {
+                            response += `${campground.description}\n\n`;
+                        }
+
+                        // Campsite information
+                        if (campground.totalSites) {
+                            response += `**Total Sites:** ${campground.totalSites}\n\n`;
+                        }
+
+                        if (campground.campsites) {
+                            response += `**Campsite Breakdown:**\n`;
+                            if (campground.campsites.tentOnly > 0) {
+                                response += `- Tent-only sites: ${campground.campsites.tentOnly}\n`;
+                            }
+                            if (campground.campsites.electricalHookups > 0) {
+                                response += `- Sites with electrical hookups: ${campground.campsites.electricalHookups}\n`;
+                            }
+                            if (campground.campsites.rvOnly > 0) {
+                                response += `- RV-only sites: ${campground.campsites.rvOnly}\n`;
+                            }
+                            if (campground.campsites.walkBoatTo > 0) {
+                                response += `- Walk-in/boat-in sites: ${campground.campsites.walkBoatTo}\n`;
+                            }
+                            if (campground.campsites.group > 0) {
+                                response += `- Group sites: ${campground.campsites.group}\n`;
+                            }
+                            if (campground.campsites.horse > 0) {
+                                response += `- Horse sites: ${campground.campsites.horse}\n`;
+                            }
+                            response += `\n`;
+                        }
+
+                        // Fee information
+                        if (campground.fees && campground.fees.length > 0) {
+                            response += `**Fees:**\n`;
+                            campground.fees.forEach(fee => {
+                                response += `- ${fee.title}: $${fee.cost}\n`;
+                                if (fee.description) {
+                                    response += `  ${fee.description}\n`;
+                                }
+                            });
+                            response += `\n`;
+                        }
+
+                        // Reservation information
+                        if (campground.reservationInfo) {
+                            response += `**Reservation Information:**\n${campground.reservationInfo}\n\n`;
+                        }
+
+                        if (campground.reservationUrl) {
+                            response += `**Make Reservations:** [${campground.reservationUrl}](${campground.reservationUrl})\n\n`;
+                        }
+
+                        response += `---\n\n`;
+                    });
+
+                    // Pagination help
+                    if (totalCount > start + limit) {
+                        const nextStart = start + limit;
+                        response += `*To see more campgrounds, use start=${nextStart} and limit=${limit}*\n\n`;
+                    }
+
+                    // Additional information about camping in the park
+                    response += `## Camping Information for ${park.name}\n\n`;
+                    response += `Always check the official park website for the most current information about campground status, `;
+                    response += `seasonal closures, and reservation requirements. Many popular campgrounds fill up months in advance, `;
+                    response += `especially during peak season. Some campgrounds may offer first-come, first-served sites in addition to reservable sites.\n\n`;
+
+                    if (park.url) {
+                        response += `Visit the official park website for more details: [${park.url}](${park.url})\n`;
+                    }
+
+                    return {
+                        content: [{ type: "text", text: response }]
+                    };
+                } catch (error: any) {
+                    console.error("Error in getCampgrounds:", error);
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Error retrieving campground information: ${error.message}`
                         }]
                     };
                 }
@@ -654,85 +906,194 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
             {
                 location: z.string().describe("Location name or coordinates"),
                 distance: z.number().optional().default(50).describe("Search radius in miles"),
-                activityType: z.string().optional().describe("Type of activity (e.g., 'camping', 'hiking')")
+                activityType: z.string().optional().describe("Type of activity (e.g., 'camping', 'hiking', 'biking', 'fishing')"),
+                includeTrails: z.boolean().optional().default(true).describe("Include trails in the results")
             },
-            async ({ location, distance, activityType }) => {
+            async ({ location, distance, activityType, includeTrails }) => {
                 try {
-                    // First get weather forecast to extract coordinates
-                    const forecast = await weatherService.get7DayForecastByLocation(location);
-                    if (!forecast || forecast.length === 0) {
+                    // First get coordinates from weather service
+                    const coordinates = await geocodingService.getCoordinates(location);
+
+                    if (!coordinates) {
                         return {
-                            content: [{ type: "text", text: `Could not find location: ${location}` }]
+                            content: [{ type: "text", text: `Could not identify the location: ${location}. Please try a more specific location name or provide coordinates.` }]
                         };
                     }
 
-                    // Get detailed weather to extract coordinates
-                    const detailedForecast = await weatherService.getDetailedForecast(location, 1);
+                    const { latitude, longitude } = coordinates;
 
-                    // TODO: Mock for this example - in real implementation we'd need to extract coords
-                    const latitude = 37.7749;
-                    const longitude = -122.4194;
+                    // Ensure minimum search radius for small towns
+                    const adjustedDistance = distance < 25 ? 25 : distance;
 
-                    // Get nearby facilities
+                    // Get facilities from Recreation.gov API
                     const facilities = await recGovService.getFacilitiesByLocation(
                         latitude,
                         longitude,
-                        distance
+                        adjustedDistance
                     );
 
-                    if (!facilities || facilities.length === 0) {
-                        return {
-                            content: [{
-                                type: "text",
-                                text: `No recreation facilities found within ${distance} miles of ${location}`
-                            }]
-                        };
+                    // Find national parks in the area
+                    const nearbyParks = await npsService.searchParksByLocation(
+                        latitude,
+                        longitude,
+                        5
+                    );
+
+                    // Get trail data if requested
+                    let trails: any[] = [];
+                    if (includeTrails) {
+                        // For each nearby park, get its trails
+                        for (const park of nearbyParks) {
+                            if (park.parkCode) {
+                                const parkTrails = await recGovService.getTrailsByPark(park.parkCode);
+                                trails = trails.concat(parkTrails);
+                            }
+                        }
                     }
 
                     // Filter by activity type if provided
                     let filteredFacilities = facilities;
                     if (activityType) {
-                        // This is a mock filter - in reality you'd need to check activities for each facility
-                        filteredFacilities = facilities.filter(f =>
-                            f.facilityName.toLowerCase().includes(activityType.toLowerCase())
-                        );
+                        filteredFacilities = facilities.filter(f => {
+                            const nameLower = f.facilityName.toLowerCase();
+                            const descLower = f.facilityDescription ? f.facilityDescription.toLowerCase() : '';
+                            return nameLower.includes(activityType.toLowerCase()) ||
+                                descLower.includes(activityType.toLowerCase());
+                        });
                     }
+
+                    // Filter trails by activity if provided
+                    let filteredTrails = trails;
+                    if (activityType && trails.length > 0) {
+                        filteredTrails = trails.filter(trail => {
+                            if (trail.trailUse && Array.isArray(trail.trailUse)) {
+                                return trail.trailUse.some((use: any) =>
+                                    use.toLowerCase().includes(activityType.toLowerCase())
+                                );
+                            }
+
+                            const nameLower = trail.name.toLowerCase();
+                            const descLower = trail.description ? trail.description.toLowerCase() : '';
+                            return nameLower.includes(activityType.toLowerCase()) ||
+                                descLower.includes(activityType.toLowerCase());
+                        });
+                    }
+
+                    // Get weather forecast for context
+                    const forecast = await weatherService.get7DayForecastByLocation(location);
 
                     // Format response
                     let response = `# Recreation Near ${location}\n\n`;
 
                     // Weather summary
                     response += `## Current Weather\n`;
-                    response += `The current forecast shows ${detailedForecast[0].condition} with temperatures `;
-                    response += `from ${detailedForecast[0].minTempF}°F to ${detailedForecast[0].maxTempF}°F.\n\n`;
-
-                    // Facilities
-                    response += `## Available Facilities (${filteredFacilities.length})\n`;
-                    if (filteredFacilities.length === 0) {
-                        response += `No ${activityType || "recreation"} facilities found within ${distance} miles.\n\n`;
+                    if (forecast && forecast.length > 0) {
+                        response += `The current forecast shows ${forecast[0].condition} with temperatures `;
+                        response += `from ${forecast[0].minTempF}°F to ${forecast[0].maxTempF}°F.\n\n`;
                     } else {
-                        filteredFacilities.slice(0, 8).forEach((facility, index) => {
-                            response += `### ${index + 1}. ${facility.facilityName}\n`;
-                            if (facility.facilityDescription) {
-                                response += `${facility.facilityDescription.substring(0, 150)}...\n\n`;
+                        response += `Weather information not available.\n\n`;
+                    }
+
+                    // Check what we found
+                    const foundSomething =
+                        filteredFacilities.length > 0 ||
+                        nearbyParks.length > 0 ||
+                        filteredTrails.length > 0;
+
+                    if (!foundSomething) {
+                        response += `## No Recreation Areas Found\n`;
+                        response += `We couldn't find any specific ${activityType || "recreation"} areas within ${adjustedDistance} miles of ${location}. `;
+                        response += `This may be due to limitations in our data sources. You might try:\n\n`;
+                        response += `1. Increasing your search radius\n`;
+                        response += `2. Searching for a nearby larger city\n`;
+                        response += `3. Checking local county and city park websites\n`;
+                        response += `4. Consulting regional hiking or recreation guides\n\n`;
+                    } else {
+                        // National Parks
+                        if (nearbyParks.length > 0) {
+                            response += `## Nearby National Parks (${nearbyParks.length})\n`;
+                            nearbyParks.forEach((park, index) => {
+                                response += `### ${index + 1}. ${park.name}\n`;
+                                if (park.description) {
+                                    response += `${park.description.substring(0, 150)}...\n\n`;
+                                }
+                                if (park.url) {
+                                    response += `[Visit Website](${park.url})\n\n`;
+                                }
+                            });
+                        }
+
+                        // Recreation Facilities
+                        if (filteredFacilities.length > 0) {
+                            response += `## Recreation Facilities (${filteredFacilities.length})\n`;
+                            filteredFacilities.slice(0, 8).forEach((facility, index) => {
+                                response += `### ${index + 1}. ${facility.facilityName}\n`;
+                                if (facility.facilityDescription) {
+                                    response += `${facility.facilityDescription.substring(0, 150)}...\n\n`;
+                                }
+                                response += `**Location**: ${facility.latitude}, ${facility.longitude}\n`;
+
+                                if (facility.facilityPhone) {
+                                    response += `**Phone**: ${facility.facilityPhone}\n`;
+                                }
+
+                                if (facility.facilityReservationUrl) {
+                                    response += `**Reservations**: ${facility.facilityReservationUrl}\n`;
+                                }
+
+                                response += `\n`;
+                            });
+
+                            if (filteredFacilities.length > 8) {
+                                response += `...and ${filteredFacilities.length - 8} more facilities\n\n`;
                             }
-                            response += `**Location**: ${facility.latitude}, ${facility.longitude}\n`;
+                        }
 
-                            if (facility.facilityPhone) {
-                                response += `**Phone**: ${facility.facilityPhone}\n`;
+                        // Trails
+                        if (filteredTrails.length > 0) {
+                            response += `## Hiking Trails (${filteredTrails.length})\n`;
+                            filteredTrails.slice(0, 8).forEach((trail, index) => {
+                                response += `### ${index + 1}. ${trail.name}\n`;
+
+                                if (trail.description) {
+                                    response += `${trail.description.substring(0, 150)}...\n\n`;
+                                }
+
+                                if (trail.length) {
+                                    response += `**Length**: ${trail.length} miles\n`;
+                                }
+
+                                if (trail.difficulty) {
+                                    response += `**Difficulty**: ${trail.difficulty}\n`;
+                                }
+
+                                if (trail.elevationGain) {
+                                    response += `**Elevation Gain**: ${trail.elevationGain} ft\n`;
+                                }
+
+                                if (trail.trailUse && trail.trailUse.length > 0) {
+                                    response += `**Activities**: ${trail.trailUse.join(", ")}\n`;
+                                }
+
+                                response += `\n`;
+                            });
+
+                            if (filteredTrails.length > 8) {
+                                response += `...and ${filteredTrails.length - 8} more trails\n\n`;
                             }
-
-                            if (facility.facilityReservationUrl) {
-                                response += `**Reservations**: ${facility.facilityReservationUrl}\n`;
-                            }
-
-                            response += `\n`;
-                        });
-
-                        if (filteredFacilities.length > 8) {
-                            response += `...and ${filteredFacilities.length - 8} more facilities\n\n`;
                         }
                     }
+
+                    // General recreation advice without location specificity
+                    response += `## Additional Resources\n`;
+                    response += `Here are some additional resources for finding recreation opportunities:\n\n`;
+                    response += `- **AllTrails**: Comprehensive trail guides and user reviews\n`;
+                    response += `- **Recreation.gov**: Official site for booking campsites and permits on federal lands\n`;
+                    response += `- **National Park Service**: Information about national parks, monuments, and historic sites\n`;
+                    response += `- **Local Visitor Centers**: Often have the most up-to-date information on trails and conditions\n`;
+                    response += `- **State Park Websites**: Offer information on state-managed recreation areas\n\n`;
+
+                    response += `For the most accurate information about trail conditions, always check recent reviews and visitor center updates before your trip.\n`;
 
                     return {
                         content: [{ type: "text", text: response }]

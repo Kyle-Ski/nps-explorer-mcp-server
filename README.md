@@ -75,7 +75,7 @@ The `deploy` command is using [Wrangler](https://developers.cloudflare.com/worke
 
 | Tool Name                | Description                                                                                       | Status             |
 |--------------------------|---------------------------------------------------------------------------------------------------|--------------------|
-| `getParkOverview`        | Get comprehensive overview of a national park including alerts, events, and weather               | working            |
+| `getParkInfo`        | Get comprehensive information about a national park including both static details and current conditions               | working            |
 | `getTrailInfo`           | Get detailed information about trails (difficulty, length, elevation gain, current conditions)     | 🚧 under construction |
 | `findParks`              | Find national parks based on criteria such as state, activities, or amenities                     | working            |
 | `getParkAlerts`          | Get current alerts, closures, and notifications for specified parks                               | working            |
@@ -83,6 +83,7 @@ The `deploy` command is using [Wrangler](https://developers.cloudflare.com/worke
 | `findNearbyRecreation`   | Find recreation areas and camping options near a given location                                   | ⚠️ not working correctly        |
 | `planParkVisit`          | Get recommendations for the best time to visit a park based on historical and forecast weather    | working            |
 | `getParkWeatherForecast` | Get detailed weather forecast for a national park by park code                                    | working            |
+| `getCampgrounds`         | List campgrounds within a given national park with detailed information                           | working            |
 
 ---
 

@@ -19,16 +19,18 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250424.0",
     "@types/node": "^22.14.1",
+    "hono": "^4.7.4",
+    "octokit": "^4.1.2",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
-    "wrangler": "^4.13.1",
-    "hono": "^4.7.4",
-    "octokit": "^4.1.2"
+    "wrangler": "^4.13.1"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.0.3",
     "agents": "^0.0.62",
     "ai": "^4.3.9",
+    "fs": "^0.0.1-security",
+    "node-fetch": "^3.3.2",
     "zod": "^3.24.3"
   }
 }
