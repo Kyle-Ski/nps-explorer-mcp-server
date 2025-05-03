@@ -6,7 +6,7 @@ This repository is a modified version of Cloudflare’s [remote-MCP-GitHub-OAuth
 - The **Recreation.gov API**  
 - A **Weather API (I chose [https://www.weatherapi.com/](https://www.weatherapi.com/))**  
 
-It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting you query park overviews, trails, alerts, events, weather forecasts, and more via simple “tool” calls to the LLM.
+It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting you query park overviews, trails, alerts, events, weather forecasts, and more via simple tool calls to the LLM.
 
 > **Looking for the original demo?**  
 > See Cloudflare’s instructions [here](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#access-the-remote-mcp-server-from-claude-desktop).
@@ -66,7 +66,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
   npm run deploy
   ```
 
-## 🧰 Tools Chart
+## 🧰 Tools
 
 | Tool Name                | Description                                                                                       | Status             |
 |--------------------------|---------------------------------------------------------------------------------------------------|--------------------|

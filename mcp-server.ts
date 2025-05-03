@@ -38,13 +38,6 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
         const recGovService = new RecGovService(http, this.env.RECGOV_API_KEY);
         const weatherService = new WeatherApiService(http, this.env.WEATHER_API_KEY);
 
-        // Add a resource for counter
-        this.server.resource("counter", "mcp://resource/counter", (uri) => {
-            return {
-                contents: [{ uri: uri.href, text: String(this.state.counter) }],
-            };
-        });
-
         // Park resource
         this.server.resource(
             "park",
@@ -932,24 +925,6 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
             }
         );
 
-        // Add a tool to increment counter
-        this.server.tool(
-            "add",
-            "Add to the counter, stored in the MCP",
-            { a: z.number() },
-            async ({ a }) => {
-                this.setState({ ...this.state, counter: this.state.counter + a });
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text: String(`Added ${a}, total is now ${this.state.counter}`),
-                        },
-                    ],
-                };
-            }
-        );
-
         // Tool to get park weather forecast - using services directly instead of resources
         this.server.tool(
             "getParkWeatherForecast",
@@ -1122,10 +1097,6 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
 
             return formattedForecast;
         }
-    }
-
-    onStateUpdate(state: State) {
-        console.log({ stateUpdate: state });
     }
 }
 
