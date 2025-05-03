@@ -1,3 +1,4 @@
+# NPS Explorer MCP Server 🔭
 ## Overview
 
 This repository is a modified version of Cloudflare’s [remote-MCP-GitHub-OAuth demo](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme), extended into a **National Parks Service Explorer**. It provides an LLM context on U.S. national parks by integrating:
@@ -60,11 +61,15 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
   npm start
   ```
 
+---
+
 ## 🚀 Deployment
+The `deploy` command is using [Wrangler](https://developers.cloudflare.com/workers/wrangler/) to deploy your server to Cloudflare [Workers](https://developers.cloudflare.com/workers/)! Cloudflare will also use their [Durable Objects](https://developers.cloudflare.com/durable-objects/) and [Workers KV](https://developers.cloudflare.com/kv/).
 
   ```bash
   npm run deploy
   ```
+---
 
 ## 🧰 Tools
 
@@ -79,6 +84,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 | `planParkVisit`          | Get recommendations for the best time to visit a park based on historical and forecast weather    | working            |
 | `getParkWeatherForecast` | Get detailed weather forecast for a national park by park code                                    | working            |
 
+---
 
 ## 🧪 Testing
 Once your server is up and running, use the [MCP Server Inspector Tool](https://modelcontextprotocol.io/docs/tools/inspector)
@@ -86,6 +92,8 @@ to make sure your server can connect and show you the tools and resources it has
 ```bash
 npx @modelcontextprotocol/inspector
 ```
+
+---
 
 ## 🛜 For Production 
 _All of this is in the original [Cloudflare README.md](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)_  
@@ -102,6 +110,8 @@ wrangler secret put COOKIE_ENCRYPTION_KEY # add any random string here e.g. open
 * Create the KV namespace: wrangler kv:namespace create "OAUTH_KV"
 * Update the Wrangler file with the KV ID
 
+---
+
 ## 📚 Reference
 * Original Cloudflare Demo README:
 [https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)
@@ -109,10 +119,15 @@ wrangler secret put COOKIE_ENCRYPTION_KEY # add any random string here e.g. open
 [https://modelcontextprotocol.io/introduction](https://modelcontextprotocol.io/introduction)
 * Connecting an agent to your server:
 
+---
+
 ## 🧑‍🔧 Troubleshooting and Common Issues
-_Check out the MCP [troubleshooting docs](https://modelcontextprotocol.io/docs/tools/debugging)_
+_Check out the MCP [troubleshooting docs](https://modelcontextprotocol.io/docs/tools/debugging)_  
+
 **Connecting to Claude Desktop Fails:**
 * Most commonly due to Node incompatibility issues, use node v18.20.4+ locally and checkout [this guide](https://kyle.czajkowski.tech/blog/troubleshooting-claude-s-remote-connection-to-mcp-servers) I wrote.
+
+---
 
 ## 🤝 Contributing
 1. Fork this repository
