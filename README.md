@@ -24,7 +24,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 ## 📋 Prerequisites
 
 - A Cloudflare account with Workers and KV enabled  
-- Node.js v18+ and npm  
+- Node.js v18.20.4+ and npm  
 - Your own API keys for:  
   - National Park Service API  
   - Recreation.gov API  
@@ -108,6 +108,11 @@ wrangler secret put COOKIE_ENCRYPTION_KEY # add any random string here e.g. open
 * Model Context Protocol:
 [https://modelcontextprotocol.io/introduction](https://modelcontextprotocol.io/introduction)
 * Connecting an agent to your server:
+
+## 🧑‍🔧 Troubleshooting and Common Issues
+_Check out the MCP [troubleshooting docs](https://modelcontextprotocol.io/docs/tools/debugging)_
+**Connecting to Claude Desktop Fails:**
+* Most commonly due to Node incompatibility issues, use node v18.20.4+ locally and checkout [this guide](https://kyle.czajkowski.tech/blog/troubleshooting-claude-s-remote-connection-to-mcp-servers) I wrote.
 
 ## 🤝 Contributing
 1. Fork this repository
