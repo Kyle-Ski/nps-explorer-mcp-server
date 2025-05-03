@@ -194,7 +194,7 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
             }
         );
 
-        // Combined tool for comprehensive park information
+        // Tool for comprehensive park information
         this.server.tool(
             "getParkInfo",
             "Get comprehensive information about a national park including both static details and current conditions",
@@ -502,23 +502,10 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                 try {
                     let parks: Park[] = [];
 
-                    // Update the NPS service to handle pagination
-                    if (!npsService.searchParks) {
-                        // If the searchParks method doesn't exist or needs to be updated,
-                        // you might need to extend your NpsApiService class
-                        return {
-                            content: [{
-                                type: "text",
-                                text: "The searchParks method needs to be implemented or updated to support pagination."
-                            }]
-                        };
-                    }
-
                     // Use appropriate search method based on provided parameters
                     if (q) {
                         parks = await npsService.searchParks(q, limit, start);
                     } else if (stateCode) {
-                        // We might need to update getParksByState to support pagination
                         parks = await npsService.getParksByState(stateCode);
                         // Apply manual pagination if the API doesn't support it
                         if (start > 0 || limit < parks.length) {
@@ -605,6 +592,135 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         content: [{
                             type: "text",
                             text: `Error finding parks: ${error.message}`
+                        }]
+                    };
+                }
+            }
+        );
+
+        // Tool for getting campground information for a park
+        this.server.tool(
+            "getCampgrounds",
+            "List campgrounds within a given national park with detailed information",
+            {
+                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)"),
+                limit: z.number().optional().default(10).describe("Maximum number of campgrounds to return"),
+                start: z.number().optional().default(0).describe("Starting index for pagination")
+            },
+            async ({ parkCode, limit, start }) => {
+                try {
+                    // Get park info for context
+                    const park = await npsService.getParkById(parkCode);
+                    if (!park) {
+                        return {
+                            content: [{ type: "text", text: `No park found with code: ${parkCode}` }]
+                        };
+                    }
+
+                    // Get all campgrounds for this park
+                    let campgrounds = await npsService.getCampgroundsByPark(parkCode);
+
+                    // Apply pagination manually if needed
+                    const totalCount = campgrounds.length;
+                    campgrounds = campgrounds.slice(start, start + limit);
+
+                    if (campgrounds.length === 0) {
+                        return {
+                            content: [{ type: "text", text: `No campgrounds found in ${park.name} (Park Code: ${parkCode}).` }]
+                        };
+                    }
+
+                    // Format a detailed response
+                    let response = `# Campgrounds in ${park.name}\n\n`;
+
+                    // Summary info
+                    response += `Found ${totalCount} campgrounds${totalCount > limit ? `, showing ${Math.min(limit, campgrounds.length)} (${start + 1}-${start + campgrounds.length})` : ''}.\n\n`;
+
+                    // Detailed campground information
+                    campgrounds.forEach((campground, index) => {
+                        response += `## ${index + 1 + start}. ${campground.name}\n\n`;
+
+                        if (campground.description) {
+                            response += `${campground.description}\n\n`;
+                        }
+
+                        // Campsite information
+                        if (campground.totalSites) {
+                            response += `**Total Sites:** ${campground.totalSites}\n\n`;
+                        }
+
+                        if (campground.campsites) {
+                            response += `**Campsite Breakdown:**\n`;
+                            if (campground.campsites.tentOnly > 0) {
+                                response += `- Tent-only sites: ${campground.campsites.tentOnly}\n`;
+                            }
+                            if (campground.campsites.electricalHookups > 0) {
+                                response += `- Sites with electrical hookups: ${campground.campsites.electricalHookups}\n`;
+                            }
+                            if (campground.campsites.rvOnly > 0) {
+                                response += `- RV-only sites: ${campground.campsites.rvOnly}\n`;
+                            }
+                            if (campground.campsites.walkBoatTo > 0) {
+                                response += `- Walk-in/boat-in sites: ${campground.campsites.walkBoatTo}\n`;
+                            }
+                            if (campground.campsites.group > 0) {
+                                response += `- Group sites: ${campground.campsites.group}\n`;
+                            }
+                            if (campground.campsites.horse > 0) {
+                                response += `- Horse sites: ${campground.campsites.horse}\n`;
+                            }
+                            response += `\n`;
+                        }
+
+                        // Fee information
+                        if (campground.fees && campground.fees.length > 0) {
+                            response += `**Fees:**\n`;
+                            campground.fees.forEach(fee => {
+                                response += `- ${fee.title}: $${fee.cost}\n`;
+                                if (fee.description) {
+                                    response += `  ${fee.description}\n`;
+                                }
+                            });
+                            response += `\n`;
+                        }
+
+                        // Reservation information
+                        if (campground.reservationInfo) {
+                            response += `**Reservation Information:**\n${campground.reservationInfo}\n\n`;
+                        }
+
+                        if (campground.reservationUrl) {
+                            response += `**Make Reservations:** [${campground.reservationUrl}](${campground.reservationUrl})\n\n`;
+                        }
+
+                        response += `---\n\n`;
+                    });
+
+                    // Pagination help
+                    if (totalCount > start + limit) {
+                        const nextStart = start + limit;
+                        response += `*To see more campgrounds, use start=${nextStart} and limit=${limit}*\n\n`;
+                    }
+
+                    // Additional information about camping in the park
+                    response += `## Camping Information for ${park.name}\n\n`;
+                    response += `Always check the official park website for the most current information about campground status, `;
+                    response += `seasonal closures, and reservation requirements. Many popular campgrounds fill up months in advance, `;
+                    response += `especially during peak season. Some campgrounds may offer first-come, first-served sites in addition to reservable sites.\n\n`;
+
+                    if (park.url) {
+                        response += `Visit the official park website for more details: [${park.url}](${park.url})\n`;
+                    }
+
+                    return {
+                        content: [{ type: "text", text: response }]
+                    };
+                } catch (error: any) {
+                    console.error("Error in getCampgrounds:", error);
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Error retrieving campground information: ${error.message}`
                         }]
                     };
                 }

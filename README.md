@@ -78,6 +78,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 | `findNearbyRecreation`   | Find recreation areas and camping options near a given location                                   | ⚠️ not working correctly        |
 | `planParkVisit`          | Get recommendations for the best time to visit a park based on historical and forecast weather    | working            |
 | `getParkWeatherForecast` | Get detailed weather forecast for a national park by park code                                    | working            |
+| `getCampgrounds`         | List campgrounds within a given national park with detailed information                           | working            |
 
 
 ## 🧪 Testing
