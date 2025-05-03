@@ -10,9 +10,11 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 
 > **Looking for the original demo?**  
 > See Cloudflare’s instructions [here](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#access-the-remote-mcp-server-from-claude-desktop).
-> **Want to add this tool directly to your Claude Desktop?**
-> Checkout the instructions [here](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)
-> Want to clone their example directly? Use their command line to get a server going on your machine:
+>
+> **Want to add this tool directly to your Claude Desktop?**  
+> Checkout the instructions [here](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)  
+>
+> **Want to clone their example directly? Use their command line to get a server going on your machine:**
 ```bash
  npm create cloudflare@latest -- my-mcp-server --template=cloudflare/ai/demos/remote-mcp-github-oauth
 ```
@@ -26,7 +28,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 - Your own API keys for:  
   - National Park Service API  
   - Recreation.gov API  
-  - Weather API (e.g., OpenWeatherMap, NOAA)  
+  - Weather API ([weatherapi](https://www.weatherapi.com/))  
 
 ---
 
@@ -42,12 +44,11 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
    ```bash
    cp .dev.vars.example .dev.vars
    ```
-
-Then open .dev.vars and populate with your own secrets.
-* [NPS API]( https://www.nps.gov/subjects/developer/api-documentation.htm)
-* [rec.gov API](https://ridb.recreation.gov/docs)
-* [Weather API (or whatever you choose)](https://www.weatherapi.com/)
-* [Create a GitHub OAuth App](https://github.com/settings/applications)
+   _Then open .dev.vars and populate with your own secrets._
+  * [NPS API]( https://www.nps.gov/subjects/developer/api-documentation.htm)
+  * [rec.gov API](https://ridb.recreation.gov/docs)
+  * [Weather API (or whatever you choose)](https://www.weatherapi.com/)
+  * [Create a GitHub OAuth App](https://github.com/settings/applications)
 
 3. **Install dependencies**  
   ```bash
@@ -70,13 +71,12 @@ Then open .dev.vars and populate with your own secrets.
 | Tool Name                | Description                                                                                       | Status             |
 |--------------------------|---------------------------------------------------------------------------------------------------|--------------------|
 | `getParkOverview`        | Get comprehensive overview of a national park including alerts, events, and weather               | working            |
-| `getTrailInfo`           | Get detailed information about trails (difficulty, length, elevation gain, current conditions)     | under construction |
+| `getTrailInfo`           | Get detailed information about trails (difficulty, length, elevation gain, current conditions)     | 🚧 under construction |
 | `findParks`              | Find national parks based on criteria such as state, activities, or amenities                     | working            |
 | `getParkAlerts`          | Get current alerts, closures, and notifications for specified parks                               | working            |
 | `getParkEvents`          | Get upcoming events at parks including ranger talks, guided hikes, and educational programs       | working            |
-| `findNearbyRecreation`   | Find recreation areas and camping options near a given location                                   | not working        |
+| `findNearbyRecreation`   | Find recreation areas and camping options near a given location                                   | ⚠️ not working correctly        |
 | `planParkVisit`          | Get recommendations for the best time to visit a park based on historical and forecast weather    | working            |
-| `add`                    | Add to the visit counter stored in the MCP                                                         | working            |
 | `getParkWeatherForecast` | Get detailed weather forecast for a national park by park code                                    | working            |
 
 
@@ -88,7 +88,7 @@ npx @modelcontextprotocol/inspector
 ```
 
 ## 🛜 For Production 
-_All of this is in the original [Cloudflare README.md](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)_
+_All of this is in the original [Cloudflare README.md](https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-github-oauth#readme)_  
 **Cloudflare recommends creating a local and remote GitHub OAuth App:**
 * For the Homepage URL, specify `https://mcp-github-oauth.<your-subdomain>.workers.dev`
 * For the Authorization callback URL, specify `https://mcp-github-oauth.<your-subdomain>.workers.dev/callback`
