@@ -194,14 +194,20 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
             }
         );
 
-        // Tool for comprehensive park information
+        // Combined tool for comprehensive park information
         this.server.tool(
-            "getParkOverview",
-            "Get comprehensive overview of a national park including alerts, events, and weather",
+            "getParkInfo",
+            "Get comprehensive information about a national park including both static details and current conditions",
             {
-                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)")
+                parkCode: z.string().describe("The park code (e.g., 'yose' for Yosemite)"),
+                includeBasics: z.boolean().optional().default(true).describe("Include basic park information"),
+                includeAlerts: z.boolean().optional().default(true).describe("Include current alerts"),
+                includeWeather: z.boolean().optional().default(true).describe("Include weather forecast"),
+                includeEvents: z.boolean().optional().default(true).describe("Include upcoming events"),
+                includeCamping: z.boolean().optional().default(true).describe("Include camping options"),
+                includeImages: z.boolean().optional().default(true).describe("Include park images")
             },
-            async ({ parkCode }) => {
+            async ({ parkCode, includeBasics, includeAlerts, includeWeather, includeEvents, includeCamping, includeImages }) => {
                 try {
                     // Get park info
                     const park = await npsService.getParkById(parkCode);
@@ -211,90 +217,175 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         };
                     }
 
-                    // Get alerts
-                    const alerts = await npsService.getAlertsByPark(parkCode);
+                    let response = `# ${park.name}\n\n`;
 
-                    // Get weather
-                    const forecast = await weatherService.get7DayForecastByLocation(park.name);
+                    // STATIC INFORMATION (from getParkDetails)
+                    if (includeBasics) {
+                        // Basic description
+                        if (park.description) {
+                            response += `## Overview\n${park.description}\n\n`;
+                        }
 
-                    // Get upcoming events
-                    const today = new Date();
-                    const endDate = new Date();
-                    endDate.setDate(today.getDate() + 14); // Next 2 weeks
+                        // Location information
+                        response += `## Location\n`;
+                        if (park.states) {
+                            response += `**States:** ${park.states}\n`;
+                        }
+                        if (park.latitude && park.longitude) {
+                            response += `**Coordinates:** ${park.latitude}, ${park.longitude}\n`;
+                        }
+                        response += `\n`;
 
-                    const events = await npsService.getEventsByPark(
-                        parkCode,
-                        today.toISOString().split('T')[0],
-                        endDate.toISOString().split('T')[0]
-                    );
+                        // Official website
+                        if (park.url) {
+                            response += `**Official Website:** ${park.url}\n\n`;
+                        }
 
-                    // Get campgrounds
-                    const campgrounds = await npsService.getCampgroundsByPark(parkCode);
+                        // Entrance fees
+                        if (park.entranceFees && park.entranceFees.length > 0) {
+                            response += `## Entrance Fees\n`;
+                            park.entranceFees.forEach(fee => {
+                                response += `### ${fee.title}\n`;
+                                response += `**Cost:** $${fee.cost}\n`;
+                                response += `${fee.description}\n\n`;
+                            });
+                        }
 
-                    // Format a comprehensive response
-                    let response = `# ${park.name} Overview\n\n`;
+                        // Operating hours
+                        if (park.operatingHours && park.operatingHours.length > 0) {
+                            response += `## Operating Hours\n`;
+                            park.operatingHours.forEach(hours => {
+                                response += `### ${hours.name}\n`;
+                                if (hours.description) {
+                                    response += `${hours.description}\n\n`;
+                                }
 
-                    // Basic info
-                    response += `## About\n${park.description || "No description available."}\n\n`;
+                                // Weekly schedule
+                                response += "**Weekly Schedule:**\n";
+                                if (hours.standardHours) {
+                                    response += `- Sunday: ${hours.standardHours.sunday}\n`;
+                                    response += `- Monday: ${hours.standardHours.monday}\n`;
+                                    response += `- Tuesday: ${hours.standardHours.tuesday}\n`;
+                                    response += `- Wednesday: ${hours.standardHours.wednesday}\n`;
+                                    response += `- Thursday: ${hours.standardHours.thursday}\n`;
+                                    response += `- Friday: ${hours.standardHours.friday}\n`;
+                                    response += `- Saturday: ${hours.standardHours.saturday}\n`;
+                                }
+                                response += `\n`;
+                            });
+                        }
 
-                    // Location
-                    if (park.latitude && park.longitude) {
-                        response += `**Location**: ${park.latitude}, ${park.longitude}\n\n`;
+                        // Activities
+                        if (park.activities && park.activities.length > 0) {
+                            response += `## Available Activities\n`;
+                            const activityGroups = [];
+                            for (let i = 0; i < park.activities.length; i += 5) {
+                                activityGroups.push(park.activities.slice(i, i + 5).map(a => a.name).join(", "));
+                            }
+                            activityGroups.forEach(group => {
+                                response += `${group}\n`;
+                            });
+                            response += `\n`;
+                        }
                     }
 
+                    // DYNAMIC/CURRENT INFORMATION (from getParkOverview)
+
                     // Alerts
-                    response += `## Current Alerts (${alerts.length})\n`;
-                    if (alerts.length === 0) {
-                        response += "No current alerts for this park.\n\n";
-                    } else {
-                        alerts.slice(0, 3).forEach(alert => {
-                            response += `- **${alert.title}** (${alert.category}): ${alert.description.substring(0, 100)}...\n`;
-                        });
-                        if (alerts.length > 3) {
-                            response += `- Plus ${alerts.length - 3} more alerts\n`;
+                    if (includeAlerts) {
+                        const alerts = await npsService.getAlertsByPark(parkCode);
+                        response += `## Current Alerts (${alerts.length})\n`;
+                        if (alerts.length === 0) {
+                            response += "No current alerts for this park.\n\n";
+                        } else {
+                            alerts.slice(0, 3).forEach(alert => {
+                                response += `- **${alert.title}** (${alert.category}): ${alert.description.substring(0, 100)}...\n`;
+                            });
+                            if (alerts.length > 3) {
+                                response += `- Plus ${alerts.length - 3} more alerts\n`;
+                            }
+                            response += "\n";
                         }
-                        response += "\n";
                     }
 
                     // Weather
-                    response += `## 7-Day Weather Forecast\n`;
-                    if (!forecast || forecast.length === 0) {
-                        response += "Weather forecast not available.\n\n";
-                    } else {
-                        forecast.forEach(day => {
-                            response += `- **${day.date}**: ${day.minTempF}°F to ${day.maxTempF}°F, ${day.condition}\n`;
-                        });
-                        response += "\n";
+                    if (includeWeather) {
+                        const forecast = await weatherService.get7DayForecastByLocation(park.name);
+                        response += `## 7-Day Weather Forecast\n`;
+                        if (!forecast || forecast.length === 0) {
+                            response += "Weather forecast not available.\n\n";
+                        } else {
+                            forecast.forEach(day => {
+                                response += `- **${day.date}**: ${day.minTempF}°F to ${day.maxTempF}°F, ${day.condition}\n`;
+                            });
+                            response += "\n";
+                        }
                     }
 
                     // Upcoming events
-                    response += `## Upcoming Events (${events.length})\n`;
-                    if (events.length === 0) {
-                        response += "No upcoming events in the next 14 days.\n\n";
-                    } else {
-                        events.slice(0, 5).forEach(event => {
-                            response += `- **${event.title}** (${event.dateStart}): ${event.location}\n`;
-                        });
-                        if (events.length > 5) {
-                            response += `- Plus ${events.length - 5} more events\n`;
+                    if (includeEvents) {
+                        // Get events for the next 14 days
+                        const today = new Date();
+                        const endDate = new Date();
+                        endDate.setDate(today.getDate() + 14);
+
+                        const startDateStr = today.toISOString().split('T')[0];
+                        const endDateStr = endDate.toISOString().split('T')[0];
+
+                        const events = await npsService.getEventsByPark(
+                            parkCode,
+                            startDateStr,
+                            endDateStr
+                        );
+
+                        response += `## Upcoming Events (${events.length})\n`;
+                        if (events.length === 0) {
+                            response += "No upcoming events in the next 14 days.\n\n";
+                        } else {
+                            events.slice(0, 5).forEach(event => {
+                                response += `- **${event.title}** (${event.dateStart}): ${event.location}\n`;
+                            });
+                            if (events.length > 5) {
+                                response += `- Plus ${events.length - 5} more events\n`;
+                            }
+                            response += "\n";
                         }
-                        response += "\n";
                     }
 
                     // Campgrounds
-                    response += `## Camping Options (${campgrounds.length})\n`;
-                    if (campgrounds.length === 0) {
-                        response += "No campgrounds available in this park.\n\n";
-                    } else {
-                        campgrounds.slice(0, 3).forEach(campground => {
-                            let siteInfo = "";
-                            if (campground.totalSites) {
-                                siteInfo = ` (${campground.totalSites} sites)`;
+                    if (includeCamping) {
+                        const campgrounds = await npsService.getCampgroundsByPark(parkCode);
+                        response += `## Camping Options (${campgrounds.length})\n`;
+                        if (campgrounds.length === 0) {
+                            response += "No campgrounds available in this park.\n\n";
+                        } else {
+                            campgrounds.slice(0, 3).forEach(campground => {
+                                let siteInfo = "";
+                                if (campground.totalSites) {
+                                    siteInfo = ` (${campground.totalSites} sites)`;
+                                }
+                                response += `- **${campground.name}**${siteInfo}\n`;
+                            });
+                            if (campgrounds.length > 3) {
+                                response += `- Plus ${campgrounds.length - 3} more campgrounds\n`;
                             }
-                            response += `- **${campground.name}**${siteInfo}\n`;
+                            response += "\n";
+                        }
+                    }
+
+                    // Images
+                    if (includeImages && park.images && park.images.length > 0) {
+                        response += `## Gallery\n`;
+                        park.images.slice(0, 3).forEach((image, index) => {
+                            response += `### Image ${index + 1}: ${image.title}\n`;
+                            response += `![${image.caption || image.title}](${image.url})\n\n`;
+                            if (image.caption) {
+                                response += `*${image.caption}*\n\n`;
+                            }
                         });
-                        if (campgrounds.length > 3) {
-                            response += `- Plus ${campgrounds.length - 3} more campgrounds\n`;
+
+                        if (park.images.length > 3) {
+                            response += `*Plus ${park.images.length - 3} more images available*\n\n`;
                         }
                     }
 
@@ -302,9 +393,9 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         content: [{ type: "text", text: response }]
                     };
                 } catch (error: any) {
-                    console.error("Error in getParkOverview:", error);
+                    console.error("Error in getParkInfo:", error);
                     return {
-                        content: [{ type: "text", text: `Error retrieving park overview: ${error.message}` }]
+                        content: [{ type: "text", text: `Error retrieving park information: ${error.message}` }]
                     };
                 }
             }

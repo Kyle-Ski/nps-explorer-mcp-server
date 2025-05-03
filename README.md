@@ -70,7 +70,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
 
 | Tool Name                | Description                                                                                       | Status             |
 |--------------------------|---------------------------------------------------------------------------------------------------|--------------------|
-| `getParkOverview`        | Get comprehensive overview of a national park including alerts, events, and weather               | working            |
+| `getParkInfo`        | Get comprehensive information about a national park including both static details and current conditions               | working            |
 | `getTrailInfo`           | Get detailed information about trails (difficulty, length, elevation gain, current conditions)     | 🚧 under construction |
 | `findParks`              | Find national parks based on criteria such as state, activities, or amenities                     | working            |
 | `getParkAlerts`          | Get current alerts, closures, and notifications for specified parks                               | working            |
