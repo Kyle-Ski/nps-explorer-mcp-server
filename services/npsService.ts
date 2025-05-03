@@ -99,9 +99,9 @@ export class NpsApiService implements INpsApiService {
         private readonly apiKey: string
     ) { }
 
-    async getParks(limit: number = 50): Promise<Park[]> {
-        console.log("NPS SERVICE: async getParks(limit: number = 50): Promise<Park[]> {");
-        const url = `${this.baseUrl}/parks?limit=${limit}&api_key=${this.apiKey}`;
+    async getParks(limit: number = 50, start: number = 0): Promise<Park[]> {
+        console.log(`NPS SERVICE: getParks(limit: ${limit}, start: ${start}): Promise<Park[]>`);
+        const url = `${this.baseUrl}/parks?limit=${limit}&start=${start}&api_key=${this.apiKey}`;
         const resp = await this.http.get<NpsApiResponse>(url);
         return resp.data.map((p) => this.mapParkResponse(p));
     }
@@ -122,9 +122,9 @@ export class NpsApiService implements INpsApiService {
     }
 
     // Search parks by keywords
-    async searchParks(query: string, limit: number = 10): Promise<Park[]> {
-        console.log("NPS SERVICE: async searchParks(query: string, limit: number = 10): Promise<Park[]> {")
-        const url = `${this.baseUrl}/parks?q=${encodeURIComponent(query)}&limit=${limit}&api_key=${this.apiKey}`;
+    async searchParks(query: string, limit: number = 10, start: number = 0): Promise<Park[]> {
+        console.log(`NPS SERVICE: searchParks(query: ${query}, limit: ${limit}, start: ${start}): Promise<Park[]>`);
+        const url = `${this.baseUrl}/parks?q=${encodeURIComponent(query)}&limit=${limit}&start=${start}&api_key=${this.apiKey}`;
         const resp = await this.http.get<NpsApiResponse>(url);
         return resp.data.map((p) => this.mapParkResponse(p));
     }

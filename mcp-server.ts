@@ -490,28 +490,49 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
         // Tool to find parks based on multiple criteria
         this.server.tool(
             "findParks",
-            "Find national parks based on criteria such as state, activities, or amenities",
+            "Find national parks based on criteria such as keyword search, state, activities, or amenities",
             {
+                q: z.string().optional().describe("Free text search query for park name or description"),
                 stateCode: z.string().optional().describe("Two-letter state code (e.g., CA, NY)"),
                 activity: z.string().optional().describe("Activity to filter parks by (e.g., hiking, camping)"),
-                q: z.string().optional().describe("Free text search query"),
-                limit: z.number().optional().default(10).describe("Maximum number of results to return")
+                limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+                start: z.number().optional().default(0).describe("Starting index for pagination")
             },
-            async ({ stateCode, activity, q, limit }) => {
+            async ({ q, stateCode, activity, limit, start }) => {
                 try {
                     let parks: Park[] = [];
 
-                    // Use existing service methods based on provided parameters
-                    if (stateCode) {
+                    // Update the NPS service to handle pagination
+                    if (!npsService.searchParks) {
+                        // If the searchParks method doesn't exist or needs to be updated,
+                        // you might need to extend your NpsApiService class
+                        return {
+                            content: [{
+                                type: "text",
+                                text: "The searchParks method needs to be implemented or updated to support pagination."
+                            }]
+                        };
+                    }
+
+                    // Use appropriate search method based on provided parameters
+                    if (q) {
+                        parks = await npsService.searchParks(q, limit, start);
+                    } else if (stateCode) {
+                        // We might need to update getParksByState to support pagination
                         parks = await npsService.getParksByState(stateCode);
+                        // Apply manual pagination if the API doesn't support it
+                        if (start > 0 || limit < parks.length) {
+                            parks = parks.slice(start, start + limit);
+                        }
                     } else if (activity) {
                         parks = await npsService.getParksByActivity(activity);
-                    } else if (q) {
-                        // Assuming you have or will implement a search method in NpsApiService
-                        parks = await npsService.searchParks(q);
+                        // Apply manual pagination if the API doesn't support it
+                        if (start > 0 || limit < parks.length) {
+                            parks = parks.slice(start, start + limit);
+                        }
                     } else {
-                        // Get all parks with a reasonable limit if no criteria provided
-                        parks = await npsService.getParks(limit);
+                        // If no specific criteria provided, get all parks with pagination
+                        parks = await npsService.getParks(limit, start);
                     }
 
                     if (!parks || parks.length === 0) {
@@ -523,30 +544,57 @@ export class NpsMcpAgent extends McpAgent<Env, State> {
                         };
                     }
 
-                    // Apply limit
-                    parks = parks.slice(0, limit);
-
-                    // Format the response
-                    let response = `# National Parks Search Results\n\nFound ${parks.length} parks matching your criteria:\n\n`;
+                    // Format the response with more comprehensive information
+                    let response = `# National Parks Search Results\n\n`;
+                    response += `Found ${parks.length} parks matching your criteria${start > 0 ? ` (starting at result ${start + 1})` : ''}:\n\n`;
 
                     parks.forEach((park, index) => {
                         response += `## ${index + 1}. ${park.name}\n`;
                         response += `**Park Code:** ${park.parkCode}\n`;
 
-                        if (park.description) {
-                            response += `**Description:** ${park.description.substring(0, 200)}${park.description.length > 200 ? '...' : ''}\n`;
-                        }
-
                         if (park.states) {
                             response += `**States:** ${park.states}\n`;
+                        }
+
+                        if (park.latitude && park.longitude) {
+                            response += `**Location:** ${park.latitude}, ${park.longitude}\n`;
+                        }
+
+                        if (park.description) {
+                            const shortDesc = park.description.length > 200
+                                ? park.description.substring(0, 200) + '...'
+                                : park.description;
+                            response += `**Description:** ${shortDesc}\n`;
+                        }
+
+                        // Include a few key activities if available
+                        if (park.activities && park.activities.length > 0) {
+                            const topActivities = park.activities.slice(0, 5).map(a => a.name).join(", ");
+                            response += `**Popular Activities:** ${topActivities}${park.activities.length > 5 ? ', and more' : ''}\n`;
+                        }
+
+                        if (park.entranceFees && park.entranceFees.length > 0) {
+                            const fee = park.entranceFees[0];
+                            response += `**Entrance Fee:** $${fee.cost} (${fee.title})\n`;
                         }
 
                         if (park.url) {
                             response += `**Website:** ${park.url}\n`;
                         }
 
-                        response += '\n';
+                        // Add a sample image if available
+                        if (park.images && park.images.length > 0) {
+                            response += `\n![${park.images[0].caption || park.name}](${park.images[0].url})\n`;
+                        }
+
+                        response += '\n---\n\n';
                     });
+
+                    // Add pagination information
+                    if (parks.length >= limit) {
+                        const nextStart = start + limit;
+                        response += `\n*To see more results, search with start=${nextStart}*\n`;
+                    }
 
                     return {
                         content: [{ type: "text", text: response }]
