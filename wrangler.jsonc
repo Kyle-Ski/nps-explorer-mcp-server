@@ -1,0 +1,32 @@
+{
+    "$schema": "../node_modules/wrangler/config-schema.json",
+    "name": "nps-mcp-server",
+    "main": "./mcp-server.ts",
+    "compatibility_date": "2025-02-04",
+    "compatibility_flags": [
+        "nodejs_compat",
+        "nodejs_compat_populate_process_env"
+    ],
+    "durable_objects": {
+        "bindings": [
+            {
+                "name": "NpsMcpAgent",
+                "class_name": "NpsMcpAgent"
+            }
+        ]
+    },
+    "migrations": [
+        {
+            "tag": "v1",
+            "new_sqlite_classes": [
+                "NpsMcpAgent"
+            ]
+        }
+    ],
+    "kv_namespaces": [
+        {
+            "binding": "OAUTH_KV",
+            "id": "6f55c20fcfd843a39c36a724506ec6ac"
+        },
+    ]
+}

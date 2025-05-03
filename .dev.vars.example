@@ -1,0 +1,5 @@
+NPS_API_KEY=YOUR KEY FROM https://www.nps.gov/subjects/developer/api-documentation.htm
+RECGOV_API_KEY=YOUR KEY FROM https://ridb.recreation.gov/docs
+WEATHER_API_KEY=YOUR KEY FROM https://weatherapi.com/
+GITHUB_CLIENT_ID=YOUR KEY FROM https://github.com/settings/applications
+GITHUB_CLIENT_SECRET=YOUR SECRET FROM https://github.com/settings/applications
