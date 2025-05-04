@@ -1,7 +1,7 @@
 {
     "$schema": "../node_modules/wrangler/config-schema.json",
     "name": "nps-mcp-server",
-    "main": "./mcp-server.ts",
+    "main": "./mcpServer.ts",
     "compatibility_date": "2025-02-04",
     "compatibility_flags": [
         "nodejs_compat",
