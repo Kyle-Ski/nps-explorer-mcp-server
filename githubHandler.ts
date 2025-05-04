@@ -1,7 +1,7 @@
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl } from "./utils";
-import { type Env } from "./mcp-server";
+import { type Env } from "./mcpServer";
 import { Octokit } from "octokit";
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
