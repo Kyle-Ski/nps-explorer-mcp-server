@@ -49,7 +49,7 @@ It runs as a Model Context Protocol (MCP) server on Cloudflare Workers, letting 
   * [NPS API]( https://www.nps.gov/subjects/developer/api-documentation.htm)
   * [rec.gov API](https://ridb.recreation.gov/docs)
   * [Weather API (or whatever you choose)](https://www.weatherapi.com/)
-  * [Create a GitHub OAuth App](https://github.com/settings/applications)
+  * [Create a GitHub OAuth App](https://github.com/settings/applications/new)
 
 3. **Install dependencies**  
   ```bash
